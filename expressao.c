@@ -6,24 +6,6 @@
 
 #include "expressao.h"
 
-/*
- * Conversor de expressão infixa para pós-fixa (notação RPN) usando o
- * algoritmo shunting-yard de Dijkstra.
- *
- * Regras suportadas:
- * - Operadores: + - * / ^
- * - Parênteses: ( )
- * - Números: inteiros e com ponto decimal (ex.: 12, 3.14)
- * - Funções/identificadores alfabéticos: sin, cos, log, etc.
- *   Se um identificador for seguido de '(', ele é tratado como função.
- * - Variáveis simples (identificadores não seguidos de '(') são emitidas
- *   na saída como tokens.
- *
- * A função retorna uma string alocada com malloc contendo os tokens da
- * expressão pós-fixa separados por espaços. O chamador deve liberar a
- * memória com free().
- */
-
 typedef struct {
 	char **data;
 	int top;
@@ -66,22 +48,17 @@ static char *stack_peek(StrStack *s) {
 }
 
 static int is_operator_char(char c) {
-	/* Agora reconhece também '%' (módulo) */
 	return c == '+' || c == '-' || c == '*' || c == '/' || c == '^' || c == '%';
 }
 
-/* Precedência de operadores: maior valor = maior precedência */
 static int precedence(const char *op) {
 	if (!op) return -1;
 	if (strcmp(op, "+") == 0 || strcmp(op, "-") == 0) return 1;
 	if (strcmp(op, "*") == 0 || strcmp(op, "/") == 0 || strcmp(op, "%") == 0) return 2;
 	if (strcmp(op, "^") == 0) return 3;
-	/* funções identificadores tratados como maior precedência para efeito
-	   de desempilhamento quando necessário */
 	return 4;
 }
 
-/* '^' é associativo à direita */
 static int is_right_assoc(const char *op) {
 	if (!op) return 0;
 	return strcmp(op, "^") == 0;
@@ -101,7 +78,7 @@ char * getFormaPosFixa(char *StrInFixa) {
 	for (size_t i = 0; s[i] != '\0';) {
 		if (isspace((unsigned char)s[i])) { i++; continue; }
 
-		/* NÚMEROS: sequência de dígitos possivelmente com '.' */
+		// Sequência de dígitos (número)
 		if (isdigit((unsigned char)s[i]) || s[i] == '.') {
 			size_t j = i;
 			while (isdigit((unsigned char)s[j]) || s[j] == '.') j++;
@@ -118,7 +95,7 @@ char * getFormaPosFixa(char *StrInFixa) {
 			continue;
 		}
 
-		/* IDENTIFICADORES: letras (funções ou variáveis) */
+		// Identificadores (variáveis ou funções)
 		if (isalpha((unsigned char)s[i])) {
 			size_t j = i;
 			while (isalpha((unsigned char)s[j])) j++;
@@ -127,8 +104,8 @@ char * getFormaPosFixa(char *StrInFixa) {
 			memcpy(name, s + i, len);
 			name[len] = '\0';
 
-			/* Se for função (seguida por '('), empilha como função; caso contrário
-			   trata como variável e envia para a saída */
+			// Se for uma função seguida por '(' empilha como função, se não
+			//   trata como variável e envia para a saída 
 			size_t k = j;
 			while (isspace((unsigned char)s[k])) k++;
 			if (s[k] == '(') {
@@ -157,7 +134,7 @@ char * getFormaPosFixa(char *StrInFixa) {
 		}
 
 		if (c == ')') {
-			/* Desempilha até encontrar '(' */
+			// Desempilha até encontrar '('
 			char *top;
 			while ((top = stack_pop(opstack)) != NULL) {
 				if (strcmp(top, "(") == 0) { free(top); break; }
@@ -172,7 +149,7 @@ char * getFormaPosFixa(char *StrInFixa) {
 				out[out_len] = '\0';
 				free(top);
 			}
-			/* Se houver uma função no topo da pilha, coloca-a na saída */
+			// Se tiver uma função no topo da pilha, coloca ela na saída
 			char *peek = stack_peek(opstack);
 			if (peek && isalpha((unsigned char)peek[0])) {
 				char *fn = stack_pop(opstack);
@@ -190,7 +167,7 @@ char * getFormaPosFixa(char *StrInFixa) {
 			i++; continue;
 		}
 
-		/* OPERADORES */
+		// Operadores 
 		if (is_operator_char(c)) {
 			char cur[2] = {c, '\0'};
 			char *top = stack_peek(opstack);
@@ -198,7 +175,6 @@ char * getFormaPosFixa(char *StrInFixa) {
 				int ptop = precedence(top);
 				int pcur = precedence(cur);
 				if ( (ptop > pcur) || (ptop == pcur && !is_right_assoc(cur)) ) {
-					/* pop top para saída */
 					char *pop = stack_pop(opstack);
 					size_t len = strlen(pop);
 					if (out_len + len + 2 >= out_cap) {
@@ -217,11 +193,10 @@ char * getFormaPosFixa(char *StrInFixa) {
 			i++; continue;
 		}
 
-		/* Caracter inesperado: ignora e avança */
 		i++;
 	}
 
-	/* Desempilha operadores restantes */
+	// Desempilha os operadores restantes 
 	char *t;
 	while ((t = stack_pop(opstack)) != NULL) {
 		if (strcmp(t, "(") == 0 || strcmp(t, ")") == 0) { free(t); continue; }
@@ -237,35 +212,16 @@ char * getFormaPosFixa(char *StrInFixa) {
 		free(t);
 	}
 
-	/* Remove espaço final, se existir */
+	// Remove o espaço final, se existir
 	if (out_len > 0 && out[out_len-1] == ' ') out[out_len-1] = '\0';
 
 	stack_free(opstack);
 	return out;
 }
 
-/*
- * Converte expressão em notação pós-fixa (tokens separados por espaço)
- * para notação infixa. Retorna uma string alocada com malloc contendo
- * a expressão infixa (com parênteses para preservar a precedência).
- * O chamador deve liberar a string retornada com free().
- *
- * Estratégia:
- * - Usamos uma pilha de strings (operandos).
- * - Para cada token:
- *   - se for operador binário, desempilha dois operandos (direito, esquerdo),
- *     monta "(esquerdo op direito)" e empilha de volta;
- *   - se for uma função conhecida, desempilha um operando e empilha "fn(oper)";
- *   - caso contrário (número ou variável), empilha o token tal qual.
- *
- * Observação: para distinguir funções de variáveis usamos uma lista simples de
- * funções matemáticas comuns (sin, cos, tan, log, ln, exp, sqrt). Identificadores
- * que não estiverem nessa lista serão tratados como variáveis/operando.
- */
 char * getFormaInFixa(char *StrPosFixa) {
 	if (!StrPosFixa) return NULL;
 
-	/* cria cópia porque strtok modifica a string */
 	char *copy = strdup(StrPosFixa);
 	if (!copy) return NULL;
 
@@ -273,31 +229,30 @@ char * getFormaInFixa(char *StrPosFixa) {
 	char *saveptr = NULL;
 	char *tok = strtok_s(copy, " ", &saveptr);
 
-	 /* lista simples de funções conhecidas (inclui nomes em português)
-		 para que getFormaInFixa reconstrua corretamente funções como sen, tg, raiz */
+	 // Lista de funções unárias suportadas
 	 const char *funcoes[] = {"sin","sen","cos","tan","tg","log","ln","exp","sqrt","raiz", NULL};
 
 	while (tok) {
-		/* operador binário (token de um caractere) */
+		// Operador binário de um caractere
 		if (tok[1] == '\0' && is_operator_char(tok[0])) {
 			char *b = stack_pop(stk);
 			char *a = stack_pop(stk);
 			if (!a || !b) {
-				/* sintaxe inválida: empilha token literal e continua */
+				// Sintaxe inválida
 				if (a) stack_push(stk, a), free(a);
 				if (b) stack_push(stk, b), free(b);
 				stack_push(stk, tok);
 				tok = strtok_s(NULL, " ", &saveptr);
 				continue;
 			}
-			size_t len = strlen(a) + strlen(b) + 4; /* espaço para op e parênteses */
+			size_t len = strlen(a) + strlen(b) + 4; 
 			char *expr = malloc(len + strlen(tok) + 1);
 			sprintf(expr, "(%s %s %s)", a, tok, b);
 			free(a); free(b);
 			stack_push(stk, expr);
 			free(expr);
 		} else {
-			/* verifica se é uma função conhecida */
+			// Verifica se é uma função unária
 			int is_fn = 0;
 			for (int i = 0; funcoes[i] != NULL; ++i) {
 				if (strcmp(tok, funcoes[i]) == 0) { is_fn = 1; break; }
@@ -305,7 +260,6 @@ char * getFormaInFixa(char *StrPosFixa) {
 			if (is_fn) {
 				char *a = stack_pop(stk);
 				if (!a) {
-					/* sem operandos: empilha token literal */
 					stack_push(stk, tok);
 				} else {
 					size_t len = strlen(tok) + 2 + strlen(a) + 1; /* fn( a ) */
@@ -316,7 +270,6 @@ char * getFormaInFixa(char *StrPosFixa) {
 					free(expr);
 				}
 			} else {
-				/* número ou variável: empilha como está */
 				stack_push(stk, tok);
 			}
 		}
@@ -324,35 +277,26 @@ char * getFormaInFixa(char *StrPosFixa) {
 		tok = strtok_s(NULL, " ", &saveptr);
 	}
 
-	/* resultado final deve ser o único item da pilha */
+	// Resultado final
 	char *res = stack_pop(stk);
 	if (!res) {
-		/* expressão vazia ou sintaxe inválida */
 		stack_free(stk);
 		free(copy);
 		return NULL;
 	}
 
-	/* se ainda houver itens na pilha, não tentamos concatenar — liberamos o restante */
 	stack_free(stk);
 
-	/* res já foi alocada via strdup/strdup-like; devolvemos-a (caller libera) */
 	char *ret = strdup(res);
 	free(res);
 	free(copy);
 	return ret;
 }
 
-/*
- * Avalia uma expressão em notação pós-fixa (tokens separados por espaço)
- * e retorna o valor numérico (float). Em caso de erro sintático retorna NAN.
- * Suporta operadores binários: + - * / ^
- * Suporta funções unárias: sin, cos, tan, log (base 10), ln (natural), exp, sqrt
- */
 float getValorPosFixa(char *StrPosFixa) {
 	if (!StrPosFixa) return NAN;
 
-	/* pilha de valores (double para maior precisão interna) */
+	// Pilha de valores 
 	typedef struct { double *data; int top; int cap; } ValStack;
 	ValStack stk;
 	stk.cap = 64; stk.top = 0; stk.data = malloc(sizeof(double) * stk.cap);
@@ -364,7 +308,6 @@ float getValorPosFixa(char *StrPosFixa) {
 	char *tok = strtok_s(copy, " ", &saveptr);
 
 	while (tok) {
-		/* operador binário de um caractere */
 		if (tok[1] == '\0' && is_operator_char(tok[0])) {
 			if (stk.top < 2) { free(copy); free(stk.data); return NAN; }
 			double b = stk.data[--stk.top];
@@ -379,8 +322,7 @@ float getValorPosFixa(char *StrPosFixa) {
 				case '^': res = pow(a, b); break;
 				default: res = NAN; break;
 			}
-			if (stk.top >= stk.cap) { /* never happens here */ }
-			/* push */
+			if (stk.top >= stk.cap) {}
 			if (stk.top + 1 > stk.cap) {
 				stk.cap *= 2; stk.data = realloc(stk.data, sizeof(double) * stk.cap);
 			}
@@ -388,21 +330,15 @@ float getValorPosFixa(char *StrPosFixa) {
 			tok = strtok_s(NULL, " ", &saveptr);
 			continue;
 		}
-
-		/* funções unárias (suportadas em inglês e português)
-		   - sen/sin, cos, tg/tan: argumentos em GRAUS (converter para radianos)
-		   - log: log10 (decimal)
-		   - ln: log natural
-		   - exp: exponencial
-		   - sqrt/raiz: raiz quadrada
-		*/
+		// Função unária
 		if (strcmp(tok, "sin") == 0 || strcmp(tok, "sen") == 0 || strcmp(tok, "cos") == 0 ||
 			strcmp(tok, "tan") == 0 || strcmp(tok, "tg") == 0 || strcmp(tok, "log") == 0 ||
 			strcmp(tok, "sqrt") == 0 || strcmp(tok, "raiz") == 0) {
 			if (stk.top < 1) { free(copy); free(stk.data); return NAN; }
 			double a = stk.data[--stk.top];
 			double res = NAN;
-			/* converter graus->radianos para trigonometria */
+
+			// Converte graus para radianos
 			if (strcmp(tok, "sin") == 0 || strcmp(tok, "sen") == 0) {
 				double rad = a * acos(-1.0) / 180.0;
 				res = sin(rad);
@@ -425,14 +361,13 @@ float getValorPosFixa(char *StrPosFixa) {
 			continue;
 		}
 
-		/* número (tenta converter) */
 		char *endp = NULL;
 		double v = strtod(tok, &endp);
 		if (endp != tok) {
 			if (stk.top + 1 > stk.cap) { stk.cap *= 2; stk.data = realloc(stk.data, sizeof(double) * stk.cap); }
 			stk.data[stk.top++] = v;
 		} else {
-			/* token desconhecido: sintaxe inválida */
+			// Token inválido
 			free(copy); free(stk.data); return NAN;
 		}
 
