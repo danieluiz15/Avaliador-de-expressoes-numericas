@@ -48,7 +48,7 @@ int main(void) {
 			char *infixa = getFormaInFixa(buf);
 			if (infixa) {
 				printf("Infixa: %s\n", infixa);
-				// Avalia a posfixa original (em `buf`)
+				// Avalia a posfixa original (em buf)
                     float valor = getValorPosFixa(buf);
 				if (!isnan(valor)) printf("Valor: %g\n\n", valor);
 				else printf("Valor: erro ao avaliar expressão posfixa\n\n");
