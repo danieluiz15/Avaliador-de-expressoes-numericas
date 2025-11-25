@@ -225,72 +225,121 @@ char * getFormaInFixa(char *StrPosFixa) {
 	char *copy = strdup(StrPosFixa);
 	if (!copy) return NULL;
 
-	StrStack *stk = stack_new(64);
+	// Pilha de expressões
+	typedef struct { char **data; int *prec; int top; int cap; } ExprStack;
+	ExprStack stk;
+	stk.cap = 64; stk.top = 0;
+	stk.data = malloc(sizeof(char*) * stk.cap);
+	stk.prec = malloc(sizeof(int) * stk.cap);
+	if (!stk.data || !stk.prec) { free(copy); if (stk.data) free(stk.data); if (stk.prec) free(stk.prec); return NULL; }
+
 	char *saveptr = NULL;
 	char *tok = strtok_s(copy, " ", &saveptr);
 
-	 // Lista de funções unárias suportadas
-	 const char *funcoes[] = {"sin","sen","cos","tan","tg","log","ln","exp","sqrt","raiz", NULL};
+	// Lista de funções unárias 
+	const char *funcoes[] = {"sin","sen","cos","tan","tg","log","ln","exp","sqrt","raiz", NULL};
 
+	auto_expr_push:
 	while (tok) {
-		// Operador binário de um caractere
+		// Operador binário
 		if (tok[1] == '\0' && is_operator_char(tok[0])) {
-			char *b = stack_pop(stk);
-			char *a = stack_pop(stk);
-			if (!a || !b) {
-				// Sintaxe inválida
-				if (a) stack_push(stk, a), free(a);
-				if (b) stack_push(stk, b), free(b);
-				stack_push(stk, tok);
-				tok = strtok_s(NULL, " ", &saveptr);
-				continue;
-			}
-			size_t len = strlen(a) + strlen(b) + 4; 
-			char *expr = malloc(len + strlen(tok) + 1);
-			sprintf(expr, "(%s %s %s)", a, tok, b);
-			free(a); free(b);
-			stack_push(stk, expr);
-			free(expr);
-		} else {
-			// Verifica se é uma função unária
-			int is_fn = 0;
-			for (int i = 0; funcoes[i] != NULL; ++i) {
-				if (strcmp(tok, funcoes[i]) == 0) { is_fn = 1; break; }
-			}
-			if (is_fn) {
-				char *a = stack_pop(stk);
-				if (!a) {
-					stack_push(stk, tok);
-				} else {
-					size_t len = strlen(tok) + 2 + strlen(a) + 1; /* fn( a ) */
-					char *expr = malloc(len + 1);
-					sprintf(expr, "%s(%s)", tok, a);
-					free(a);
-					stack_push(stk, expr);
-					free(expr);
-				}
+			if (stk.top < 2) { goto err; }
+			char *right = stk.data[--stk.top]; int rprec = stk.prec[stk.top];
+			char *left = stk.data[--stk.top]; int lprec = stk.prec[stk.top];
+
+			int pcur = precedence(tok);
+			int rightNeeds = 0, leftNeeds = 0;
+			int rightAssoc = is_right_assoc(tok);
+			if (rightAssoc) {
+				leftNeeds = (lprec <= pcur);
+				rightNeeds = (rprec < pcur);
 			} else {
-				stack_push(stk, tok);
+				leftNeeds = (lprec < pcur);
+				rightNeeds = (rprec <= pcur);
 			}
+
+			size_t newlen = strlen(left) + strlen(right) + 2 + (leftNeeds?2:0) + (rightNeeds?2:0);
+			char *expr = malloc(newlen + 1);
+			char *p = expr;
+			if (leftNeeds) *p++ = '(';
+			memcpy(p, left, strlen(left)); p += strlen(left);
+			if (leftNeeds) *p++ = ')';
+			*p++ = tok[0];
+			if (rightNeeds) *p++ = '(';
+			memcpy(p, right, strlen(right)); p += strlen(right);
+			if (rightNeeds) *p++ = ')';
+			*p = '\0';
+
+			free(left); free(right);
+
+			if (stk.top + 1 > stk.cap) {
+				stk.cap *= 2;
+				stk.data = realloc(stk.data, sizeof(char*) * stk.cap);
+				stk.prec = realloc(stk.prec, sizeof(int) * stk.cap);
+			}
+			stk.data[stk.top] = expr;
+			stk.prec[stk.top] = pcur;
+			stk.top++;
+
+			tok = strtok_s(NULL, " ", &saveptr);
+			continue;
 		}
 
-		tok = strtok_s(NULL, " ", &saveptr);
+		// Verifica se é função unária 
+		int is_fn = 0; int fn_index = -1;
+		for (int i = 0; funcoes[i] != NULL; ++i) {
+			if (strcmp(tok, funcoes[i]) == 0) { is_fn = 1; fn_index = i; break; }
+		}
+		if (is_fn) {
+			if (stk.top < 1) goto err;
+			char *arg = stk.data[--stk.top]; int aparent = stk.prec[stk.top];
+			size_t newlen = strlen(tok) + 2 + strlen(arg);
+			char *expr = malloc(newlen + 1);
+			sprintf(expr, "%s(%s)", tok, arg);
+			free(arg);
+			int pcur = precedence(tok);
+			if (stk.top + 1 > stk.cap) {
+				stk.cap *= 2;
+				stk.data = realloc(stk.data, sizeof(char*) * stk.cap);
+				stk.prec = realloc(stk.prec, sizeof(int) * stk.cap);
+			}
+			stk.data[stk.top] = expr;
+			stk.prec[stk.top] = pcur;
+			stk.top++;
+			tok = strtok_s(NULL, " ", &saveptr);
+			continue;
+		}
+
+		// Número ou variável 
+		if (tok[0] != '\0') {
+			char *atom = strdup(tok);
+			if (!atom) goto err;
+			if (stk.top + 1 > stk.cap) {
+				stk.cap *= 2;
+				stk.data = realloc(stk.data, sizeof(char*) * stk.cap);
+				stk.prec = realloc(stk.prec, sizeof(int) * stk.cap);
+			}
+			stk.data[stk.top] = atom;
+			stk.prec[stk.top] = 100; 
+			stk.top++;
+			tok = strtok_s(NULL, " ", &saveptr);
+			continue;
+		}
 	}
 
 	// Resultado final
-	char *res = stack_pop(stk);
-	if (!res) {
-		stack_free(stk);
-		free(copy);
-		return NULL;
-	}
+	if (stk.top != 1) goto err;
+	char *res = strdup(stk.data[0]);
+	// Libera pilha
+	for (int i = 0; i < stk.top; ++i) free(stk.data[i]);
+	free(stk.data); free(stk.prec); free(copy);
+	return res;
 
-	stack_free(stk);
-
-	char *ret = strdup(res);
-	free(res);
-	free(copy);
-	return ret;
+err:
+	// Limpa e retorna NULL em caso de erro
+	for (int i = 0; i < stk.top; ++i) free(stk.data[i]);
+	free(stk.data); free(stk.prec); free(copy);
+	return NULL;
 }
 
 float getValorPosFixa(char *StrPosFixa) {
