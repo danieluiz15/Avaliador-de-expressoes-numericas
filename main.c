@@ -2,7 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
-#include "expressao.h"
+#include "calculadora.h"
 
 char * getFormaPosFixa(char *StrInFixa); // Retorna a forma posFixa de Str (inFixa)
 

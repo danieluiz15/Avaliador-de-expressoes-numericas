@@ -1,5 +1,7 @@
-#ifndef EXPRESSAO_H
-#define EXPRESSAO_H
+#ifndef CALCULADORA_H
+#define CALCULADORA_H
+
+// EXPRESSAO_H virou CALCULADORA_H para seguir o padrão solicitado
 
 typedef struct {
 

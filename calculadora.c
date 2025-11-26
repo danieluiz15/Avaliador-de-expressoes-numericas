@@ -4,7 +4,9 @@
 #include <ctype.h>
 #include <math.h>
 
-#include "expressao.h"
+#include "calculadora.h"
+
+// expressao.c virou calculadora.c para seguir o padrão solicitado
 
 typedef struct {
 	char **data;
